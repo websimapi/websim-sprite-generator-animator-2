@@ -80,41 +80,28 @@ async function analyzeAndAnimateSprite() {
     gameContainer.style.display = 'none';
     
     try {
-        // Ask LLM to analyze the sprite and suggest animation frames
-        const completion = await websim.chat.completions.create({
-            messages: [
-                {
-                    role: "system",
-                    content: `You are an expert in pixel art animation. Analyze the provided sprite image and create animation data for a simple 2D game character. 
-                    Respond directly with JSON, following this JSON schema, and no other text.
-                    {
-                        "frameCount": number,
-                        "frameWidth": number,
-                        "frameHeight": number,
-                        "animationSpeed": number,
-                        "animations": {
-                            "idle": { "description": string, "modifications": array },
-                            "walkRight": { "description": string, "modifications": array },
-                            "walkLeft": { "description": string, "modifications": array }
-                        }
-                    }
-                    
-                    For each animation type, provide an array of frame modifications that should be applied to the base sprite.
-                    Each modification should describe how to transform the base sprite (like slight position changes, flips, or small visual tweaks).
-                    Keep it simple with 2-4 frames per animation. The frameWidth and frameHeight should typically be 32 or 64 pixels.`
+        // Instead of using LLM to analyze the sprite, use fixed animation data
+        animationData = {
+            frameCount: 4,
+            frameWidth: 64,
+            frameHeight: 64,
+            animationSpeed: 0.1,
+            animations: {
+                idle: { 
+                    description: "Character standing still with slight breathing movement", 
+                    modifications: [] 
                 },
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: "Analyze this pixel sprite and create animation data for it:" },
-                        { type: "image_url", image_url: { url: generatedSpriteUrl } }
-                    ]
+                walkRight: { 
+                    description: "Character walking to the right", 
+                    modifications: [] 
+                },
+                walkLeft: { 
+                    description: "Character walking to the left", 
+                    modifications: [] 
                 }
-            ],
-            json: true
-        });
+            }
+        };
         
-        animationData = JSON.parse(completion.content);
         console.log('Animation data:', animationData);
         
         // Create and display animation frames
@@ -126,8 +113,8 @@ async function analyzeAndAnimateSprite() {
         gameContainer.style.display = 'block';
         
     } catch (error) {
-        console.error('Error analyzing sprite:', error);
-        alert('Failed to analyze sprite. Please try again.');
+        console.error('Error creating animation:', error);
+        alert('Failed to animate sprite. Please try again.');
         loadingAnimation.style.display = 'none';
         animateBtn.disabled = false;
     }
@@ -348,4 +335,3 @@ function startGame() {
     // Show instructions
     alert('Use the left and right arrow keys to move the character!');
 }
-

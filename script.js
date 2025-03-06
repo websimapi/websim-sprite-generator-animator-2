@@ -102,9 +102,7 @@ async function analyzeAndAnimateSprite() {
             }
         };
         
-        console.log('Animation data:', animationData);
-        
-        // Create and display animation frames
+        // Create PIXI application for creating animations
         await createAnimationFrames();
         
         // Update UI
@@ -120,25 +118,31 @@ async function analyzeAndAnimateSprite() {
     }
 }
 
-// Create animation frames based on LLM analysis
+// Create animation frames based on sprite
 async function createAnimationFrames() {
     // Clear previous frames
     animationContainer.innerHTML = '';
     animationFrames.innerHTML = '';
     
-    // Create a temporary canvas to manipulate the sprite
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = animationData.frameWidth;
-    canvas.height = animationData.frameHeight;
-    
-    // Load the original sprite
-    const originalSprite = new Image();
-    originalSprite.src = generatedSpriteUrl;
-    
-    await new Promise((resolve) => {
-        originalSprite.onload = resolve;
+    // Initialize PIXI.js for creating our frames
+    const app = new PIXI.Application({
+        width: animationData.frameWidth,
+        height: animationData.frameHeight,
+        backgroundAlpha: 0
     });
+    
+    // Create a temporary element to hold the renderer
+    const tempElement = document.createElement('div');
+    tempElement.style.position = 'absolute';
+    tempElement.style.left = '-9999px';
+    document.body.appendChild(tempElement);
+    tempElement.appendChild(app.view);
+    
+    // Load the sprite texture
+    const spriteTexture = await PIXI.Assets.load(generatedSpriteUrl);
+    const originalSprite = new PIXI.Sprite(spriteTexture);
+    originalSprite.width = animationData.frameWidth;
+    originalSprite.height = animationData.frameHeight;
     
     // Create frames for all animations
     spriteFrames = {};
@@ -146,59 +150,90 @@ async function createAnimationFrames() {
     for (const [animName, animInfo] of Object.entries(animationData.animations)) {
         spriteFrames[animName] = [];
         
-        // For idle, just use the original sprite as first frame
+        // For idle animation
         if (animName === 'idle') {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(originalSprite, 0, 0, canvas.width, canvas.height);
-            const idleFrame = new Image();
-            idleFrame.src = canvas.toDataURL();
-            spriteFrames.idle.push(idleFrame.src);
+            // Create base frame
+            const baseFrame = app.renderer.extract.base64(originalSprite);
+            spriteFrames.idle.push(baseFrame);
             
-            // Add simple "breathing" effect for other idle frames
+            // Create breathing effect for other idle frames
             for (let i = 1; i < animationData.frameCount; i++) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const frame = new PIXI.Container();
+                const sprite = new PIXI.Sprite(spriteTexture);
+                sprite.width = animationData.frameWidth;
+                sprite.height = animationData.frameHeight;
+                
                 // Slightly move the sprite up and down
-                const yOffset = i % 2 === 0 ? 1 : -1;
-                ctx.drawImage(originalSprite, 0, yOffset, canvas.width, canvas.height);
-                const frame = new Image();
-                frame.src = canvas.toDataURL();
-                spriteFrames.idle.push(frame.src);
+                sprite.y = i % 2 === 0 ? 1 : -1;
+                
+                frame.addChild(sprite);
+                app.stage.addChild(frame);
+                
+                // Extract frame as base64
+                const frameBase64 = app.renderer.extract.base64(frame);
+                spriteFrames.idle.push(frameBase64);
+                
+                // Clear stage for next frame
+                app.stage.removeChildren();
             }
         } 
-        // For walkRight, use original and shift slightly
+        // For walkRight animation
         else if (animName === 'walkRight') {
             for (let i = 0; i < animationData.frameCount; i++) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const frame = new PIXI.Container();
+                const sprite = new PIXI.Sprite(spriteTexture);
+                sprite.width = animationData.frameWidth;
+                sprite.height = animationData.frameHeight;
+                
                 // Alternate leg positions and slight up/down movement
-                const yOffset = i % 2 === 0 ? 1 : 0;
-                const xOffset = i % 2 === 0 ? 1 : -1;
-                ctx.drawImage(originalSprite, xOffset, yOffset, canvas.width, canvas.height);
-                const frame = new Image();
-                frame.src = canvas.toDataURL();
-                spriteFrames.walkRight.push(frame.src);
+                sprite.y = i % 2 === 0 ? 1 : 0;
+                sprite.x = i % 2 === 0 ? 1 : -1;
+                
+                frame.addChild(sprite);
+                app.stage.addChild(frame);
+                
+                // Extract frame as base64
+                const frameBase64 = app.renderer.extract.base64(frame);
+                spriteFrames.walkRight.push(frameBase64);
+                
+                // Clear stage for next frame
+                app.stage.removeChildren();
             }
         }
-        // For walkLeft, flip the walkRight frames
+        // For walkLeft animation (flipped walkRight)
         else if (animName === 'walkLeft') {
             for (let i = 0; i < animationData.frameCount; i++) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.save();
+                const frame = new PIXI.Container();
+                const sprite = new PIXI.Sprite(spriteTexture);
+                sprite.width = animationData.frameWidth;
+                sprite.height = animationData.frameHeight;
+                
                 // Flip horizontally
-                ctx.translate(canvas.width, 0);
-                ctx.scale(-1, 1);
-                // Same offset pattern as walkRight
-                const yOffset = i % 2 === 0 ? 1 : 0;
-                const xOffset = i % 2 === 0 ? 1 : -1;
-                ctx.drawImage(originalSprite, xOffset, yOffset, canvas.width, canvas.height);
-                ctx.restore();
-                const frame = new Image();
-                frame.src = canvas.toDataURL();
-                spriteFrames.walkLeft.push(frame.src);
+                sprite.scale.x = -1;
+                sprite.x = animationData.frameWidth; // Offset to account for flipping
+                
+                // Apply same offsets as walkRight
+                sprite.y = i % 2 === 0 ? 1 : 0;
+                sprite.x += i % 2 === 0 ? -1 : 1; // Reverse the x offset because of flipping
+                
+                frame.addChild(sprite);
+                app.stage.addChild(frame);
+                
+                // Extract frame as base64
+                const frameBase64 = app.renderer.extract.base64(frame);
+                spriteFrames.walkLeft.push(frameBase64);
+                
+                // Clear stage for next frame
+                app.stage.removeChildren();
             }
         }
     }
     
-    // Display preview of all frames
+    // Clean up temporary elements
+    document.body.removeChild(tempElement);
+    app.destroy(true);
+    
+    // Display preview of frames
     let animIndex = 0;
     const animations = Object.keys(spriteFrames);
     const currentAnim = animations[animIndex];

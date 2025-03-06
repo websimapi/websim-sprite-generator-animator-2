@@ -1,0 +1,351 @@
+import * as PIXI from 'pixi.js';
+
+// DOM Elements
+const spritePromptInput = document.getElementById('sprite-prompt');
+const generateBtn = document.getElementById('generate-btn');
+const spriteImage = document.getElementById('sprite-image');
+const loadingSprite = document.getElementById('loading-sprite');
+const animationDisplay = document.querySelector('.animation-display');
+const animateBtn = document.getElementById('animate-btn');
+const loadingAnimation = document.getElementById('loading-animation');
+const animationContainer = document.getElementById('animation-container');
+const animationFrames = document.getElementById('animation-frames');
+const gameContainer = document.querySelector('.game-container');
+const startGameBtn = document.getElementById('start-game-btn');
+const gameCanvas = document.getElementById('game-canvas');
+
+// State variables
+let generatedSpriteUrl = null;
+let animationData = null;
+let spriteFrames = null;
+let game = null;
+
+// Event listeners
+generateBtn.addEventListener('click', generateSprite);
+animateBtn.addEventListener('click', analyzeAndAnimateSprite);
+startGameBtn.addEventListener('click', startGame);
+
+// Generate sprite using the LLM
+async function generateSprite() {
+    const prompt = spritePromptInput.value.trim();
+    if (!prompt) {
+        alert('Please enter a description for your sprite');
+        return;
+    }
+    
+    // Update UI
+    generateBtn.disabled = true;
+    spriteImage.style.display = 'none';
+    loadingSprite.style.display = 'block';
+    animationDisplay.style.display = 'none';
+    gameContainer.style.display = 'none';
+    
+    try {
+        // Generate the sprite using AI image generation
+        const fullPrompt = `A pixel art game sprite character: ${prompt}. Should be a simple 32x32 or 64x64 pixel character on transparent background. Use bright colors and clear outlines.`;
+        
+        const result = await websim.imageGen({
+            prompt: fullPrompt,
+            aspect_ratio: "1:1"
+        });
+        
+        generatedSpriteUrl = result.url;
+        
+        // Display the generated sprite
+        spriteImage.src = generatedSpriteUrl;
+        spriteImage.onload = () => {
+            spriteImage.style.display = 'block';
+            loadingSprite.style.display = 'none';
+            animationDisplay.style.display = 'block';
+            generateBtn.disabled = false;
+        };
+    } catch (error) {
+        console.error('Error generating sprite:', error);
+        alert('Failed to generate sprite. Please try again.');
+        loadingSprite.style.display = 'none';
+        generateBtn.disabled = false;
+    }
+}
+
+// Analyze sprite and generate animation frames
+async function analyzeAndAnimateSprite() {
+    if (!generatedSpriteUrl) {
+        alert('Please generate a sprite first');
+        return;
+    }
+    
+    // Update UI
+    animateBtn.disabled = true;
+    loadingAnimation.style.display = 'block';
+    gameContainer.style.display = 'none';
+    
+    try {
+        // Ask LLM to analyze the sprite and suggest animation frames
+        const completion = await websim.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: `You are an expert in pixel art animation. Analyze the provided sprite image and create animation data for a simple 2D game character. 
+                    Respond directly with JSON, following this JSON schema, and no other text.
+                    {
+                        "frameCount": number,
+                        "frameWidth": number,
+                        "frameHeight": number,
+                        "animationSpeed": number,
+                        "animations": {
+                            "idle": { "description": string, "modifications": array },
+                            "walkRight": { "description": string, "modifications": array },
+                            "walkLeft": { "description": string, "modifications": array }
+                        }
+                    }
+                    
+                    For each animation type, provide an array of frame modifications that should be applied to the base sprite.
+                    Each modification should describe how to transform the base sprite (like slight position changes, flips, or small visual tweaks).
+                    Keep it simple with 2-4 frames per animation. The frameWidth and frameHeight should typically be 32 or 64 pixels.`
+                },
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: "Analyze this pixel sprite and create animation data for it:" },
+                        { type: "image_url", image_url: { url: generatedSpriteUrl } }
+                    ]
+                }
+            ],
+            json: true
+        });
+        
+        animationData = JSON.parse(completion.content);
+        console.log('Animation data:', animationData);
+        
+        // Create and display animation frames
+        await createAnimationFrames();
+        
+        // Update UI
+        loadingAnimation.style.display = 'none';
+        animateBtn.disabled = false;
+        gameContainer.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error analyzing sprite:', error);
+        alert('Failed to analyze sprite. Please try again.');
+        loadingAnimation.style.display = 'none';
+        animateBtn.disabled = false;
+    }
+}
+
+// Create animation frames based on LLM analysis
+async function createAnimationFrames() {
+    // Clear previous frames
+    animationContainer.innerHTML = '';
+    animationFrames.innerHTML = '';
+    
+    // Create a temporary canvas to manipulate the sprite
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = animationData.frameWidth;
+    canvas.height = animationData.frameHeight;
+    
+    // Load the original sprite
+    const originalSprite = new Image();
+    originalSprite.src = generatedSpriteUrl;
+    
+    await new Promise((resolve) => {
+        originalSprite.onload = resolve;
+    });
+    
+    // Create frames for all animations
+    spriteFrames = {};
+    
+    for (const [animName, animInfo] of Object.entries(animationData.animations)) {
+        spriteFrames[animName] = [];
+        
+        // For idle, just use the original sprite as first frame
+        if (animName === 'idle') {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(originalSprite, 0, 0, canvas.width, canvas.height);
+            const idleFrame = new Image();
+            idleFrame.src = canvas.toDataURL();
+            spriteFrames.idle.push(idleFrame.src);
+            
+            // Add simple "breathing" effect for other idle frames
+            for (let i = 1; i < animationData.frameCount; i++) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Slightly move the sprite up and down
+                const yOffset = i % 2 === 0 ? 1 : -1;
+                ctx.drawImage(originalSprite, 0, yOffset, canvas.width, canvas.height);
+                const frame = new Image();
+                frame.src = canvas.toDataURL();
+                spriteFrames.idle.push(frame.src);
+            }
+        } 
+        // For walkRight, use original and shift slightly
+        else if (animName === 'walkRight') {
+            for (let i = 0; i < animationData.frameCount; i++) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Alternate leg positions and slight up/down movement
+                const yOffset = i % 2 === 0 ? 1 : 0;
+                const xOffset = i % 2 === 0 ? 1 : -1;
+                ctx.drawImage(originalSprite, xOffset, yOffset, canvas.width, canvas.height);
+                const frame = new Image();
+                frame.src = canvas.toDataURL();
+                spriteFrames.walkRight.push(frame.src);
+            }
+        }
+        // For walkLeft, flip the walkRight frames
+        else if (animName === 'walkLeft') {
+            for (let i = 0; i < animationData.frameCount; i++) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.save();
+                // Flip horizontally
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+                // Same offset pattern as walkRight
+                const yOffset = i % 2 === 0 ? 1 : 0;
+                const xOffset = i % 2 === 0 ? 1 : -1;
+                ctx.drawImage(originalSprite, xOffset, yOffset, canvas.width, canvas.height);
+                ctx.restore();
+                const frame = new Image();
+                frame.src = canvas.toDataURL();
+                spriteFrames.walkLeft.push(frame.src);
+            }
+        }
+    }
+    
+    // Display preview of all frames
+    let animIndex = 0;
+    const animations = Object.keys(spriteFrames);
+    const currentAnim = animations[animIndex];
+    
+    // Show frame thumbnails
+    spriteFrames[currentAnim].forEach((frameSrc, idx) => {
+        const frameImg = document.createElement('img');
+        frameImg.src = frameSrc;
+        frameImg.classList.add('frame-img');
+        if (idx === 0) frameImg.classList.add('selected');
+        animationFrames.appendChild(frameImg);
+    });
+    
+    // Show animation preview
+    const previewImg = document.createElement('img');
+    previewImg.src = spriteFrames[currentAnim][0];
+    previewImg.style.width = '128px';
+    previewImg.style.height = '128px';
+    previewImg.style.imageRendering = 'pixelated';
+    animationContainer.appendChild(previewImg);
+    
+    // Animate the preview
+    let frameIdx = 0;
+    setInterval(() => {
+        frameIdx = (frameIdx + 1) % spriteFrames[currentAnim].length;
+        previewImg.src = spriteFrames[currentAnim][frameIdx];
+        
+        // Update selected frame highlight
+        document.querySelectorAll('.frame-img').forEach((img, idx) => {
+            if (idx === frameIdx) {
+                img.classList.add('selected');
+            } else {
+                img.classList.remove('selected');
+            }
+        });
+    }, 200);
+}
+
+// Start the game with the animated sprite
+function startGame() {
+    if (!spriteFrames) {
+        alert('Please generate and animate a sprite first');
+        return;
+    }
+    
+    // Clean up existing game if any
+    if (game) {
+        game.destroy(true);
+    }
+    
+    // Initialize PIXI.js
+    game = new PIXI.Application({
+        view: gameCanvas,
+        width: 800,
+        height: 400,
+        backgroundColor: 0x87CEEB, // Sky blue
+    });
+    
+    // Create ground
+    const ground = new PIXI.Graphics();
+    ground.beginFill(0x8B4513); // Brown color
+    ground.drawRect(0, 300, 800, 100);
+    ground.endFill();
+    game.stage.addChild(ground);
+    
+    // Create character sprite
+    const characterTextures = {
+        idle: spriteFrames.idle.map(src => PIXI.Texture.from(src)),
+        walkRight: spriteFrames.walkRight.map(src => PIXI.Texture.from(src)),
+        walkLeft: spriteFrames.walkLeft.map(src => PIXI.Texture.from(src)),
+    };
+    
+    const character = new PIXI.AnimatedSprite(characterTextures.idle);
+    character.scale.set(2, 2); // Scale up the pixel art
+    character.x = 400;
+    character.y = 300 - character.height;
+    character.animationSpeed = 0.1;
+    character.play();
+    game.stage.addChild(character);
+    
+    // Character state
+    const characterState = {
+        speed: 3,
+        isMoving: false,
+        direction: 'right'
+    };
+    
+    // Keyboard controls
+    const keys = {};
+    window.addEventListener('keydown', e => {
+        keys[e.key] = true;
+    });
+    window.addEventListener('keyup', e => {
+        keys[e.key] = false;
+    });
+    
+    // Game loop
+    game.ticker.add(() => {
+        let isMoving = false;
+        
+        // Left and right movement
+        if (keys['ArrowLeft']) {
+            character.x -= characterState.speed;
+            isMoving = true;
+            characterState.direction = 'left';
+            
+            if (character.textures !== characterTextures.walkLeft) {
+                character.textures = characterTextures.walkLeft;
+                character.play();
+            }
+        } 
+        else if (keys['ArrowRight']) {
+            character.x += characterState.speed;
+            isMoving = true;
+            characterState.direction = 'right';
+            
+            if (character.textures !== characterTextures.walkRight) {
+                character.textures = characterTextures.walkRight;
+                character.play();
+            }
+        } 
+        else if (!isMoving && character.textures !== characterTextures.idle) {
+            character.textures = characterTextures.idle;
+            character.play();
+        }
+        
+        // Keep character within bounds
+        if (character.x < 0) character.x = 0;
+        if (character.x > game.screen.width - character.width) {
+            character.x = game.screen.width - character.width;
+        }
+    });
+    
+    // Show instructions
+    alert('Use the left and right arrow keys to move the character!');
+}
+

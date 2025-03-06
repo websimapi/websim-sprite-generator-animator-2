@@ -124,11 +124,12 @@ async function createAnimationFrames() {
     animationContainer.innerHTML = '';
     animationFrames.innerHTML = '';
     
-    // Initialize PIXI.js for creating our frames
-    const app = new PIXI.Application({
+    // Initialize PIXI.js v8 for creating our frames
+    const app = new PIXI.Application();
+    app.init({
         width: animationData.frameWidth,
         height: animationData.frameHeight,
-        backgroundAlpha: 0
+        background: { alpha: 0 }
     });
     
     // Create a temporary element to hold the renderer
@@ -136,11 +137,11 @@ async function createAnimationFrames() {
     tempElement.style.position = 'absolute';
     tempElement.style.left = '-9999px';
     document.body.appendChild(tempElement);
-    tempElement.appendChild(app.view);
+    tempElement.appendChild(app.canvas);
     
     // Load the sprite texture
     const spriteTexture = await PIXI.Assets.load(generatedSpriteUrl);
-    const originalSprite = new PIXI.Sprite(spriteTexture);
+    const originalSprite = PIXI.Sprite.from(spriteTexture);
     originalSprite.width = animationData.frameWidth;
     originalSprite.height = animationData.frameHeight;
     
@@ -153,24 +154,24 @@ async function createAnimationFrames() {
         // For idle animation
         if (animName === 'idle') {
             // Create base frame
-            const baseFrame = app.renderer.extract.base64(originalSprite);
+            app.stage.addChild(originalSprite);
+            const baseFrame = app.canvas.toDataURL();
             spriteFrames.idle.push(baseFrame);
+            app.stage.removeChild(originalSprite);
             
             // Create breathing effect for other idle frames
             for (let i = 1; i < animationData.frameCount; i++) {
-                const frame = new PIXI.Container();
-                const sprite = new PIXI.Sprite(spriteTexture);
+                const sprite = PIXI.Sprite.from(spriteTexture);
                 sprite.width = animationData.frameWidth;
                 sprite.height = animationData.frameHeight;
                 
                 // Slightly move the sprite up and down
                 sprite.y = i % 2 === 0 ? 1 : -1;
                 
-                frame.addChild(sprite);
-                app.stage.addChild(frame);
+                app.stage.addChild(sprite);
                 
                 // Extract frame as base64
-                const frameBase64 = app.renderer.extract.base64(frame);
+                const frameBase64 = app.canvas.toDataURL();
                 spriteFrames.idle.push(frameBase64);
                 
                 // Clear stage for next frame
@@ -180,8 +181,7 @@ async function createAnimationFrames() {
         // For walkRight animation
         else if (animName === 'walkRight') {
             for (let i = 0; i < animationData.frameCount; i++) {
-                const frame = new PIXI.Container();
-                const sprite = new PIXI.Sprite(spriteTexture);
+                const sprite = PIXI.Sprite.from(spriteTexture);
                 sprite.width = animationData.frameWidth;
                 sprite.height = animationData.frameHeight;
                 
@@ -189,11 +189,10 @@ async function createAnimationFrames() {
                 sprite.y = i % 2 === 0 ? 1 : 0;
                 sprite.x = i % 2 === 0 ? 1 : -1;
                 
-                frame.addChild(sprite);
-                app.stage.addChild(frame);
+                app.stage.addChild(sprite);
                 
                 // Extract frame as base64
-                const frameBase64 = app.renderer.extract.base64(frame);
+                const frameBase64 = app.canvas.toDataURL();
                 spriteFrames.walkRight.push(frameBase64);
                 
                 // Clear stage for next frame
@@ -203,8 +202,7 @@ async function createAnimationFrames() {
         // For walkLeft animation (flipped walkRight)
         else if (animName === 'walkLeft') {
             for (let i = 0; i < animationData.frameCount; i++) {
-                const frame = new PIXI.Container();
-                const sprite = new PIXI.Sprite(spriteTexture);
+                const sprite = PIXI.Sprite.from(spriteTexture);
                 sprite.width = animationData.frameWidth;
                 sprite.height = animationData.frameHeight;
                 
@@ -216,11 +214,10 @@ async function createAnimationFrames() {
                 sprite.y = i % 2 === 0 ? 1 : 0;
                 sprite.x += i % 2 === 0 ? -1 : 1; // Reverse the x offset because of flipping
                 
-                frame.addChild(sprite);
-                app.stage.addChild(frame);
+                app.stage.addChild(sprite);
                 
                 // Extract frame as base64
-                const frameBase64 = app.renderer.extract.base64(frame);
+                const frameBase64 = app.canvas.toDataURL();
                 spriteFrames.walkLeft.push(frameBase64);
                 
                 // Clear stage for next frame
@@ -231,7 +228,7 @@ async function createAnimationFrames() {
     
     // Clean up temporary elements
     document.body.removeChild(tempElement);
-    app.destroy(true);
+    app.destroy();
     
     // Display preview of frames
     let animIndex = 0;
@@ -281,15 +278,16 @@ function startGame() {
     
     // Clean up existing game if any
     if (game) {
-        game.destroy(true);
+        game.destroy();
     }
     
     // Initialize PIXI.js
-    game = new PIXI.Application({
-        view: gameCanvas,
+    game = new PIXI.Application();
+    game.init({
         width: 800,
-        height: 400,
-        backgroundColor: 0x87CEEB, // Sky blue
+        height: 400, 
+        background: { color: 0x87CEEB },
+        canvas: gameCanvas
     });
     
     // Create ground
